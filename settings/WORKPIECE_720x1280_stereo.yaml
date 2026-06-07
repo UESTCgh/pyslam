@@ -1,0 +1,53 @@
+#--------------------------------------------------------------------------------------------
+# Viewer Parameters
+#--------------------------------------------------------------------------------------------
+Viewer.on: 1
+
+Viewer.KeyFrameSize: 0.02
+Viewer.KeyFrameLineWidth: 2
+Viewer.GraphLineWidth: 1
+Viewer.PointSize: 2
+Viewer.CameraSize: 0.03
+Viewer.CameraLineWidth: 2
+Viewer.ViewpointX: 0
+Viewer.ViewpointY: -0.2
+Viewer.ViewpointZ: -0.05
+Viewer.ViewpointF: 2000
+
+#--------------------------------------------------------------------------------------------
+# Camera Parameters.
+# The source stereo pair has a vertical baseline in image coordinates. The local
+# workpiece wrapper rotates both images CCW, turning vertical disparity into
+# horizontal disparity while matching this 720x1280 portrait calibration.
+#--------------------------------------------------------------------------------------------
+
+Camera.fx: 520.0882
+Camera.fy: 520.0882
+Camera.cx: 558.8495
+Camera.cy: 948.9516
+
+Camera.k1: 0.0
+Camera.k2: 0.0
+Camera.p1: 0.0
+Camera.p2: 0.0
+Camera.k3: 0.0
+
+Camera.width: 720
+Camera.height: 1280
+
+Camera.fps: 10.0
+
+# baseline_m * fx = 0.00419 * 520.0882
+Camera.bf: 2.179169558
+
+# OpenCV imread returns BGR images.
+Camera.RGB: 0
+
+ThDepth: 40.0
+
+#--------------------------------------------------------------------------------------------
+# Features extraction
+#--------------------------------------------------------------------------------------------
+
+FeatureTrackerConfig.nFeatures: 2000
+FeatureTrackerConfig.name: ORB

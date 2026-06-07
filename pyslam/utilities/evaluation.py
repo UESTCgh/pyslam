@@ -19,16 +19,7 @@
 
 import json
 import os
-import evo
 import numpy as np
-
-from evo.core import metrics, trajectory
-from evo.core.metrics import PoseRelation, Unit
-from evo.core.trajectory import PosePath3D, PoseTrajectory3D
-from evo.tools import plot
-from evo.tools.plot import PlotMode
-from evo.tools.settings import SETTINGS
-from matplotlib import pyplot as plt
 
 from errno import EEXIST
 import traceback
@@ -62,6 +53,10 @@ def evaluate_evo(
         return None, None
 
     try:
+        import evo
+        from evo.core import metrics
+        from evo.core.trajectory import PosePath3D
+
         traj_est = PosePath3D(poses_se3=poses_est)
         traj_ref = PosePath3D(poses_se3=poses_gt)
         traj_est_aligned = traj_est  # PosePath3D(poses_se3=poses_est)
@@ -90,17 +85,26 @@ def evaluate_evo(
 
         if save_plot:
             # Use the Agg backend for non-interactive matplotlib
-            plt.switch_backend(
-                "Agg"
-            )  # This backend does not require a display and is suitable for saving figures to files without displaying them.
+            import matplotlib
+
+            matplotlib.use("Agg", force=True)
+            try:
+                from evo.tools import settings as evo_settings
+
+                evo_settings.SETTINGS.plot_backend = "Agg"
+            except Exception:
+                pass
+            from evo.tools import plot as evo_plot
+            from evo.tools.plot import PlotMode
+            from matplotlib import pyplot as plt
 
             plot_modes = [PlotMode.xy, PlotMode.yz, PlotMode.xyz]
             for plot_mode in plot_modes:
                 fig = plt.figure()
-                ax = evo.tools.plot.prepare_axis(fig, plot_mode)
+                ax = evo_plot.prepare_axis(fig, plot_mode)
                 ax.set_title(f"ATE RMSE: {ape_stat}")
-                evo.tools.plot.traj(ax, plot_mode, traj_ref, "--", "gray", "gt")
-                evo.tools.plot.traj_colormap(
+                evo_plot.traj(ax, plot_mode, traj_ref, "--", "gray", "gt")
+                evo_plot.traj_colormap(
                     ax,
                     traj_est_aligned,
                     ape_metric.error,
@@ -122,7 +126,6 @@ def evaluate_evo(
         return ape_stats, T_gt_est
     except Exception as e:
         Printer.red(f"ERROR: [evaluate_evo] evaluating poses: {e}")
-        traceback.print_exc()
         return None, None
 
 

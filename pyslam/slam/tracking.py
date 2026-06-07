@@ -148,7 +148,7 @@ class TrackingHistory(object):
 class Tracking:
     def __init__(self, slam: "Slam"):
 
-        if kShowFeatureMatches:
+        if kShowFeatureMatches or Parameters.kUseStereoPnPFallback:
             Frame.is_store_imgs = True
 
         self.slam = slam
@@ -197,6 +197,7 @@ class Tracking:
         self.last_reloc_frame_id = -float("inf")
 
         self.pose_is_ok = False
+        self.used_stereo_pnp_fallback = False
         self.mean_pose_opt_chi2_error = None
         self.predicted_pose = None
         self.velocity = None
@@ -642,6 +643,237 @@ class Tracking:
             self.pose_is_ok = False
             f_cur.update_pose(pose_before_pos_opt)
 
+    def track_stereo_pnp_fallback(self, f_ref: Frame, f_cur: Frame):
+        if (
+            not Parameters.kUseStereoPnPFallback
+            or self.sensor_type == SensorType.MONOCULAR
+            or f_ref is None
+            or f_ref.depths is None
+        ):
+            return False
+
+        Printer.orange(">>>> stereo PnP fallback...")
+        if Parameters.kUseVisualOdometryPoints:
+            created_points = TrackingCore.create_vo_points(
+                f_ref, max_num_points=Parameters.kStereoPnPFallbackMaxVoPoints
+            )
+            if created_points:
+                self.vo_points.extend(created_points)
+                print(f"Stereo PnP fallback: added VO points on ref frame: {len(created_points)}")
+
+        matching_result = match_frames(
+            f_cur, f_ref, ratio_test=Parameters.kStereoPnPFallbackRatioTest
+        )
+        idxs_cur = (
+            np.asarray(matching_result.idxs1, dtype=int)
+            if matching_result.idxs1 is not None
+            else np.array([], dtype=int)
+        )
+        idxs_ref = (
+            np.asarray(matching_result.idxs2, dtype=int)
+            if matching_result.idxs2 is not None
+            else np.array([], dtype=int)
+        )
+        if len(idxs_cur) == 0 or len(idxs_ref) == 0:
+            Printer.orange("Stereo PnP fallback: no descriptor matches")
+            return self.track_stereo_pnp_fallback_with_temporary_orb(f_ref, f_cur)
+
+        valid_depth_mask = f_ref.depths[idxs_ref] > Parameters.kMinDepth
+        idxs_cur = idxs_cur[valid_depth_mask]
+        idxs_ref = idxs_ref[valid_depth_mask]
+        if len(idxs_cur) < Parameters.kStereoPnPFallbackMinDepthPoints:
+            Printer.orange(
+                "Stereo PnP fallback: not enough depth matches: ",
+                len(idxs_cur),
+                " < ",
+                Parameters.kStereoPnPFallbackMinDepthPoints,
+            )
+            return self.track_stereo_pnp_fallback_with_temporary_orb(f_ref, f_cur)
+
+        pts3d, pts3d_mask = f_ref.unproject_points_3d(idxs_ref, transform_in_world=True)
+        if pts3d is None or pts3d_mask is None:
+            return self.track_stereo_pnp_fallback_with_temporary_orb(f_ref, f_cur)
+        pts3d_mask = np.asarray(pts3d_mask, dtype=bool)
+        pts3d = np.asarray(pts3d[pts3d_mask], dtype=np.float32)
+        idxs_cur = idxs_cur[pts3d_mask]
+        idxs_ref = idxs_ref[pts3d_mask]
+        if len(pts3d) < Parameters.kStereoPnPFallbackMinDepthPoints:
+            return self.track_stereo_pnp_fallback_with_temporary_orb(f_ref, f_cur)
+
+        kps_cur = np.asarray(f_cur.kps[idxs_cur], dtype=np.float32)
+        dist_coeffs = getattr(f_cur.camera, "D", np.zeros((4, 1), dtype=np.float32))
+        try:
+            ok, rvec, tvec, inliers = cv2.solvePnPRansac(
+                pts3d,
+                kps_cur,
+                f_cur.camera.K,
+                dist_coeffs,
+                iterationsCount=100,
+                reprojectionError=Parameters.kStereoPnPFallbackReprojErr,
+                confidence=0.99,
+                flags=cv2.SOLVEPNP_EPNP,
+            )
+        except cv2.error as e:
+            Printer.red(f"Stereo PnP fallback: solvePnPRansac failed: {e}")
+            return False
+
+        num_inliers = 0 if inliers is None else len(inliers)
+        print(f"Stereo PnP fallback: matches={len(pts3d)}, inliers={num_inliers}")
+        if not ok or num_inliers < Parameters.kStereoPnPFallbackMinInliers:
+            return self.track_stereo_pnp_fallback_with_temporary_orb(f_ref, f_cur)
+
+        inliers = inliers.ravel()
+        Rcw, _ = cv2.Rodrigues(rvec)
+        f_cur.update_pose(poseRt(Rcw, tvec.reshape(3)))
+
+        inlier_idxs_cur = idxs_cur[inliers]
+        inlier_idxs_ref = idxs_ref[inliers]
+        num_found_map_pts, idx_ref_prop, idx_cur_prop = TrackingCore.propagate_map_point_matches(
+            f_ref,
+            f_cur,
+            inlier_idxs_ref,
+            inlier_idxs_cur,
+            max_descriptor_distance=self.descriptor_distance_sigma,
+        )
+        self.idxs_ref = idx_ref_prop
+        self.idxs_cur = idx_cur_prop
+        self.num_matched_kps = num_inliers
+        self.num_matched_map_points = num_found_map_pts
+        if num_found_map_pts < Parameters.kStereoPnPFallbackMinInliers:
+            Printer.orange(
+                "Stereo PnP fallback: pose ok but few propagated map points: ",
+                num_found_map_pts,
+            )
+            self.pose_is_ok = True
+            self.used_stereo_pnp_fallback = True
+            return True
+
+        self.pose_optimization(f_cur, "stereo-pnp-fallback")
+        self.num_matched_map_points = f_cur.clean_outlier_map_points()
+        if (
+            not self.pose_is_ok
+            or self.num_matched_map_points < Parameters.kStereoPnPFallbackMinInliers
+        ):
+            Printer.orange(
+                "Stereo PnP fallback: pose optimization weak, keeping RANSAC pose with ",
+                num_inliers,
+                " inliers",
+            )
+            self.pose_is_ok = True
+        self.used_stereo_pnp_fallback = True
+        return True
+
+    def track_stereo_pnp_fallback_with_temporary_orb(self, f_ref: Frame, f_cur: Frame):
+        if f_ref.img is None or f_ref.img_right is None or f_cur.img is None:
+            Printer.orange("Stereo PnP fallback/temp ORB: missing stored images")
+            return False
+
+        def to_gray(img):
+            if img.ndim == 2:
+                return img
+            if img.shape[2] == 4:
+                return cv2.cvtColor(img, cv2.COLOR_BGRA2GRAY)
+            return cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+        orb = cv2.ORB_create(nfeatures=Parameters.kStereoPnPFallbackOrbFeatures)
+        matcher = cv2.BFMatcher(cv2.NORM_HAMMING)
+
+        ref_left = to_gray(f_ref.img)
+        ref_right = to_gray(f_ref.img_right)
+        cur_left = to_gray(f_cur.img)
+        kps_ref, des_ref = orb.detectAndCompute(ref_left, None)
+        kps_ref_right, des_ref_right = orb.detectAndCompute(ref_right, None)
+        kps_cur, des_cur = orb.detectAndCompute(cur_left, None)
+        if des_ref is None or des_ref_right is None or des_cur is None:
+            return False
+
+        depths_ref = np.full(len(kps_ref), -1.0, dtype=np.float32)
+        max_disparity = f_ref.camera.bf / max(f_ref.camera.b, Parameters.kMinDepth)
+        stereo_matches = matcher.knnMatch(des_ref, des_ref_right, k=2)
+        num_stereo = 0
+        for pair in stereo_matches:
+            if len(pair) < 2:
+                continue
+            m, n = pair
+            if m.distance >= 0.9 * n.distance:
+                continue
+            x_left, y_left = kps_ref[m.queryIdx].pt
+            x_right, y_right = kps_ref_right[m.trainIdx].pt
+            disparity = x_left - x_right
+            if (
+                abs(y_left - y_right) <= Parameters.kStereoMatchingMaxRowDistance
+                and 0 < disparity < max_disparity
+            ):
+                depths_ref[m.queryIdx] = f_ref.camera.bf / disparity
+                num_stereo += 1
+
+        frame_matches = matcher.knnMatch(des_cur, des_ref, k=2)
+        pts3d = []
+        kps2d = []
+        for pair in frame_matches:
+            if len(pair) < 2:
+                continue
+            m, n = pair
+            if m.distance >= Parameters.kStereoPnPFallbackRatioTest * n.distance:
+                continue
+            z = depths_ref[m.trainIdx]
+            if z <= Parameters.kMinDepth:
+                continue
+            x, y = kps_ref[m.trainIdx].pt
+            pc = np.array(
+                [
+                    (x - f_ref.camera.cx) * z / f_ref.camera.fx,
+                    (y - f_ref.camera.cy) * z / f_ref.camera.fy,
+                    z,
+                ],
+                dtype=np.float64,
+            )
+            pw = f_ref.Rwc() @ pc + f_ref.Ow()
+            pts3d.append(pw)
+            kps2d.append(kps_cur[m.queryIdx].pt)
+
+        if len(pts3d) < Parameters.kStereoPnPFallbackMinDepthPoints:
+            Printer.orange(
+                "Stereo PnP fallback/temp ORB: not enough depth matches: ",
+                len(pts3d),
+                ", stereo: ",
+                num_stereo,
+            )
+            return False
+
+        pts3d = np.asarray(pts3d, dtype=np.float32)
+        kps2d = np.asarray(kps2d, dtype=np.float32)
+        dist_coeffs = getattr(f_cur.camera, "D", np.zeros((4, 1), dtype=np.float32))
+        try:
+            ok, rvec, tvec, inliers = cv2.solvePnPRansac(
+                pts3d,
+                kps2d,
+                f_cur.camera.K,
+                dist_coeffs,
+                iterationsCount=1000,
+                reprojectionError=Parameters.kStereoPnPFallbackReprojErr,
+                confidence=0.99,
+                flags=cv2.SOLVEPNP_EPNP,
+            )
+        except cv2.error as e:
+            Printer.red(f"Stereo PnP fallback/temp ORB: solvePnPRansac failed: {e}")
+            return False
+
+        num_inliers = 0 if inliers is None else len(inliers)
+        print(
+            f"Stereo PnP fallback/temp ORB: stereo={num_stereo}, matches={len(pts3d)}, inliers={num_inliers}"
+        )
+        if not ok or num_inliers < Parameters.kStereoPnPFallbackMinInliers:
+            return False
+
+        Rcw, _ = cv2.Rodrigues(rvec)
+        f_cur.update_pose(poseRt(Rcw, tvec.reshape(3)))
+        self.num_matched_kps = num_inliers
+        self.num_matched_map_points = 0
+        self.pose_is_ok = True
+        self.used_stereo_pnp_fallback = True
+        return True
+
     # track camera motion of f_cur w.r.t. given keyframe
     # estimate motion by matching keypoint descriptors
     def track_keyframe(self, keyframe: Frame, f_cur: Frame, name="match-frame-keyframe"):
@@ -1078,6 +1310,57 @@ class Tracking:
             self.poses.append(poseRt(self.cur_R, p))
             self.pose_timestamps.append(f_cur.timestamp)
 
+    def bootstrap_stereo_from_frame(self, f_cur: Frame, img, img_right=None, depth=None):
+        if self.sensor_type == SensorType.MONOCULAR or f_cur.depths is None:
+            return False
+
+        valid_depth_idxs = np.flatnonzero(f_cur.depths > Parameters.kMinDepth)
+        if len(valid_depth_idxs) < Parameters.kBootstrapStereoMinDepthPoints:
+            Printer.yellow(
+                "Stereo bootstrap: not enough valid depth points: ",
+                len(valid_depth_idxs),
+                " < ",
+                Parameters.kBootstrapStereoMinDepthPoints,
+            )
+            return False
+
+        kf_cur = KeyFrame(f_cur, img, img_right, depth)
+        f_cur.kf_ref = kf_cur
+        kf_cur.kf_ref = kf_cur
+        self.kf_ref = kf_cur
+        self.kf_last = kf_cur
+
+        self.map.keyframe_origins.add(kf_cur)
+        self.map.add_frame(kf_cur)
+        self.map.add_keyframe(kf_cur)
+        kf_cur.init_observations()
+
+        pts3d, pts3d_mask = f_cur.unproject_points_3d(valid_depth_idxs, transform_in_world=True)
+        num_added_points = self.map.add_stereo_points(
+            pts3d, pts3d_mask, f_cur, kf_cur, valid_depth_idxs, img
+        )
+        if num_added_points < Parameters.kBootstrapStereoMinDepthPoints:
+            Printer.yellow(
+                "Stereo bootstrap: too few map points added: ",
+                num_added_points,
+                " < ",
+                Parameters.kBootstrapStereoMinDepthPoints,
+            )
+            return False
+
+        kf_cur.update_connections()
+        self.map.local_map.update(self.kf_ref)
+        self.state = SlamState.OK
+        self.f_cur = kf_cur
+        self.update_tracking_history()
+        self.update_history()
+        self.motion_model.update_pose(kf_cur.timestamp, kf_cur.position(), kf_cur.quaternion())
+        self.motion_model.is_ok = False
+        Printer.green(
+            f"Stereo bootstrap: initialized with kf {kf_cur.id} and {num_added_points} map points"
+        )
+        return True
+
     # @ main track method @
     def track(self, img, img_right, depth, img_id, timestamp=None, mask=None, mask_right=None):
         """
@@ -1152,6 +1435,10 @@ class Tracking:
         self.idxs_cur = []
 
         if self.state == SlamState.NO_IMAGES_YET:
+            if Parameters.kBootstrapStereoFromFirstFrame and self.bootstrap_stereo_from_frame(
+                f_cur, img, img_right, depth
+            ):
+                return
             # push first frame in the inizializer
             self.initializer.init(f_cur, img, img_right, depth)
             self.state = SlamState.NOT_INITIALIZED
@@ -1263,6 +1550,7 @@ class Tracking:
 
         # reset pose state flag
         self.pose_is_ok = False
+        self.used_stereo_pnp_fallback = False
 
         # HACK: Since loop closing may be not fast enough (when adjusting the loop) in python (and tracking is not in real-time) => give loop closing more time to process stuff
         if self.slam.loop_closing is not None:
@@ -1323,6 +1611,9 @@ class Tracking:
                         # if previous track didn't go well then track the camera motion from kf_ref to f_cur
                         self.track_keyframe(self.kf_ref, f_cur)
 
+                if not self.pose_is_ok:
+                    self.track_stereo_pnp_fallback(f_ref, f_cur)
+
             else:
                 # SLAM is NOT OK
                 if self.state != SlamState.INIT_RELOCALIZE:
@@ -1361,7 +1652,9 @@ class Tracking:
 
             # now, having a better estimate of f_cur pose, we can find more map point matches:
             # find matches between {local map points} (points in the local map) and {unmatched keypoints of f_cur}
-            if self.pose_is_ok:
+            if self.pose_is_ok and not (
+                self.used_stereo_pnp_fallback and Parameters.kStereoPnPFallbackSkipLocalMap
+            ):
                 self.track_local_map(f_cur)
 
             # update slam state

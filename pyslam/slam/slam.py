@@ -43,8 +43,6 @@ from .global_bundle_adjustment import GlobalBundleAdjustment
 from .slam_commons import SlamState
 from .tracking import Tracking
 
-from pyslam.loop_closing.loop_closing import LoopClosing
-
 from pyslam.io.dataset_types import SensorType, DatasetEnvironmentType
 
 from pyslam.local_features.feature_tracker import (
@@ -274,6 +272,8 @@ class Slam(object):
 
     def init_loop_closing(self, loop_detector_config, headless=False, do_start_loop_closing=True):
         if Parameters.kUseLoopClosing and loop_detector_config is not None:
+            from pyslam.loop_closing.loop_closing import LoopClosing
+
             if self.loop_closing is not None:
                 self.loop_closing.quit()
             self.loop_closing = LoopClosing(self, loop_detector_config, headless=headless)
@@ -594,6 +594,10 @@ class Slam(object):
         # keyframes = self.map.get_keyframes()
         # keyframes.sort(key=lambda kf: kf.id)
         # print(f'keyframes: {[kf.id for kf in keyframes]}')
+        if self.map.num_keyframes() == 0:
+            Printer.yellow("get_final_trajectory: no keyframes in map; returning empty trajectory")
+            return poses, timestamps, ids
+
         first_keyframe = self.map.get_first_keyframe()
 
         # Transform all keyframes so that the first keyframe is at the origin.

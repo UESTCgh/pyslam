@@ -1,0 +1,60 @@
+<title>pySLAM 适配 Workpiece 纵向基线双目数据集结论</title>
+
+<callout emoji="📌" background-color="light-yellow" border-color="yellow">
+  <p>结论：该数据集不是 pySLAM/KITTI 默认假设下的标准水平双目，原始匹配呈明显纵向视差。当前已按纵向基线处理为旋转后的 KITTI-like wrapper，并通过 workpiece 专用 stereo PnP fallback 跑通主流程。</p>
+</callout>
+
+<h1>数据与几何判断</h1>
+<ul>
+  <li>原始数据路径：/home/gh/pointcloud_ws/data_new/Workpiece_Scan_20260515_kitti。</li>
+  <li>原始序列包含 image_0、image_1、times.txt，共 64 帧。</li>
+  <li>原始左右图特征匹配主要表现为纵向视差；旋转 90 度后可转成水平视差，符合 pySLAM KITTI stereo 前端的基本输入形态。</li>
+  <li>用户给定基线为 0.00419 m，fx=520.0882，因此 Camera.bf=2.179169558。</li>
+</ul>
+
+<h1>已完成适配</h1>
+<table>
+  <thead><tr><th>项目</th><th>结果</th></tr></thead>
+  <tbody>
+    <tr><td>数据包装</td><td>生成 data/workpiece_kitti_vertical_baseline，按 KITTI sequences/00/image_0、image_1、times.txt 组织。</td></tr>
+    <tr><td>图像处理</td><td>左右图逆时针旋转 90 度，并按每帧 ORB 匹配估计 residual y shift 做右图 y 对齐。</td></tr>
+    <tr><td>配置文件</td><td>新增 config_workpiece.yaml 和 settings/WORKPIECE_720x1280_stereo.yaml。</td></tr>
+    <tr><td>运行模式</td><td>使用 Python core：PYSLAM_USE_CPP=false；C++ core/gtsam 当前不作为可靠路径。</td></tr>
+    <tr><td>跟踪补丁</td><td>新增首帧 stereo bootstrap 与 workpiece 专用 stereo PnP fallback；普通数据集默认关闭。</td></tr>
+  </tbody>
+</table>
+
+<h1>关键修改</h1>
+<ul>
+  <li>main_slam.py 和 main_vo.py 支持 --config_path。</li>
+  <li>pyslam/config_parameters.py 增加 kBootstrapStereoFromFirstFrame、kUseStereoPnPFallback 等配置项。</li>
+  <li>pyslam/slam/tracking.py 增加首帧 stereo bootstrap、上一帧 stereo depth PnP fallback，以及临时 OpenCV ORB PnP fallback。</li>
+  <li>pyslam/slam/tracking_core.py 对 homography RANSAC 增加少于 4 个匹配点时的保护。</li>
+  <li>pyslam/utilities/evaluation.py 将 evo/matplotlib plot backend 改为 headless 友好的 Agg，并避免无效 GT 对齐时刷大段 traceback。</li>
+</ul>
+
+<h1>验证结果</h1>
+<ul>
+  <li>最终运行命令：HOME=/tmp/pyslam_home MPLCONFIGDIR=/tmp/pyslam_mpl PYSLAM_USE_CPP=false ./main_slam.py --config_path config_workpiece.yaml --headless --no_output_date。</li>
+  <li>输出统计：num_total_frames=64，num_processed_frames=64，num_lost_frames=0，percent_lost=0.00。</li>
+  <li>在线轨迹文件：results/workpiece_metrics/trajectory_workpiece_online.txt，目前 63 行。</li>
+  <li>最终轨迹文件：results/workpiece_metrics/trajectory_workpiece_final.txt，目前 20 行。</li>
+  <li>日志中仍可看到一次 session reset，发生在弱纹理/低 PnP inlier 片段附近，但最终统计文件显示 processed frames 为 64、lost frames 为 0。</li>
+</ul>
+
+<h1>重要限制</h1>
+<callout emoji="⚠️" background-color="light-red" border-color="red">
+  <p>当前方案是为了让 pySLAM 在该数据集上可运行的工程适配，不等价于严格标定后的高精度 SLAM。由于基线只有 4.19 mm，深度尺度很敏感；再加上我们使用 identity poses 作为占位 GT，EVO ATE 不具备真实评价意义。</p>
+</callout>
+
+<h1>建议后续</h1>
+<ol>
+  <li seq="auto">如果需要可信建图/尺度，建议补齐真实 stereo 外参并做严格 stereo rectification，而不是只依赖旋转 + y shift。</li>
+  <li seq="auto">如果目标只是跑通轨迹，可继续用 config_workpiece.yaml 当前路径。</li>
+  <li seq="auto">如果目标是稳定稠密点云，需要进一步检查深度范围、视差过滤、点云尺度和离群点剔除。</li>
+</ol>
+
+<h1>当前运行入口</h1>
+<pre lang="bash"><code>cd /home/gh/work/pyslam
+. ./pyenv-activate.sh
+HOME=/tmp/pyslam_home MPLCONFIGDIR=/tmp/pyslam_mpl PYSLAM_USE_CPP=false ./main_slam.py --config_path config_workpiece.yaml --headless --no_output_date</code></pre>

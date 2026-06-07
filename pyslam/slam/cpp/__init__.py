@@ -43,6 +43,7 @@ import atexit
 import gc
 import warnings
 import traceback
+import importlib
 
 from pyslam.config_parameters import Parameters
 from pyslam.utilities.logging import Printer
@@ -118,6 +119,25 @@ core_classes = [
 ]
 
 
+class _LazyPythonModule:
+    """Delay importing optional Python fallback modules until they are actually used."""
+
+    def __init__(self, module_name):
+        self._module_name = module_name
+        self._module = None
+
+    def _load(self):
+        if self._module is None:
+            self._module = importlib.import_module(self._module_name)
+        return self._module
+
+    def __getattr__(self, name):
+        return getattr(self._load(), name)
+
+    def __repr__(self):
+        return f"<lazy module {self._module_name}>"
+
+
 def _import_cpp_core():
     """Import the C++ core module and return all classes in a dictionary"""
     try:
@@ -136,7 +156,11 @@ def _import_cpp_core():
             "CameraUtils": cpp_core.CameraUtils,
             "Sim3Pose": cpp_core.Sim3Pose,
             "optimizer_g2o": cpp_core.OptimizerG2o,
-            "optimizer_gtsam": cpp_core.OptimizerGTSAM,
+            "optimizer_gtsam": (
+                cpp_core.OptimizerGTSAM
+                if hasattr(cpp_core, "OptimizerGTSAM")
+                else _LazyPythonModule("pyslam.slam.optimizer_gtsam")
+            ),
             "TrackingCore": cpp_core.TrackingCore,
             "LocalMappingCore": cpp_core.LocalMappingCore,
             "CameraType": cpp_core.CameraType,
@@ -244,7 +268,10 @@ if USE_CPP_CORE:
 else:
     cpp_classes, CPP_AVAILABLE = None, False
 
-python_classes, PYTHON_AVAILABLE = _import_python_core()
+if (not USE_CPP_CORE) or (USE_PYTHON_FALLBACK and not CPP_AVAILABLE):
+    python_classes, PYTHON_AVAILABLE = _import_python_core()
+else:
+    python_classes, PYTHON_AVAILABLE = None, False
 
 if CPP_AVAILABLE:
     # print("✅ cpp_module imported successfully, C++ core is available")
@@ -296,11 +323,30 @@ class CppModule:
 class PythonModule:
     """Wrapper class to provide Python module interface"""
 
-    classes = python_classes
+    def _ensure_classes(self):
+        global python_classes, PYTHON_AVAILABLE
+        if python_classes is None:
+            python_classes, PYTHON_AVAILABLE = _import_python_core()
+            if not PYTHON_AVAILABLE:
+                raise ImportError("Python SLAM core fallback is not available")
+        return python_classes
 
     def __init__(self):
-        for name, cls in python_classes.items():
+        if python_classes is not None:
+            for name, cls in python_classes.items():
+                setattr(self, name, cls)
+
+    @property
+    def classes(self):
+        return self._ensure_classes()
+
+    def __getattr__(self, name):
+        classes = self._ensure_classes()
+        if name in classes:
+            cls = classes[name]
             setattr(self, name, cls)
+            return cls
+        raise AttributeError(name)
 
 
 cpp_module = CppModule()

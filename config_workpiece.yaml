@@ -1,0 +1,45 @@
+DATASET:
+  type: KITTI_DATASET
+
+
+KITTI_DATASET:
+  type: kitti
+  sensor_type: stereo
+  base_path: ./data/workpiece_kitti_vertical_baseline
+  name: '00'
+  settings: settings/WORKPIECE_720x1280_stereo.yaml
+  is_color: False
+  groundtruth_file: auto
+  environment_type: indoor
+  start_frame_id: 0
+
+
+SYSTEM_STATE:
+  load_state: False
+  folder_path: results/slam_state
+
+
+SAVE_TRAJECTORY:
+  save_trajectory: True
+  format_type: kitti
+  output_folder: results/workpiece_metrics
+  basename: trajectory_workpiece
+
+
+GLOBAL_PARAMETERS:
+  kDoSparseSemanticMappingAndSegmentation: False
+  kUseLoopClosing: False
+  kStereoMatchingMaxRowDistance: 5.0
+  kInitializerNumMinFeaturesStereo: 300
+  kInitializerNumMinTriangulatedPointsStereo: 20
+  kInitializerNumMinNumPointsForPnPWithDepth: 8
+  kBootstrapStereoFromFirstFrame: True
+  kBootstrapStereoMinDepthPoints: 30
+  kUseStereoPnPFallback: True
+  kStereoPnPFallbackMinDepthPoints: 12
+  kStereoPnPFallbackMinInliers: 6
+  kStereoPnPFallbackReprojErr: 20.0
+  kStereoPnPFallbackRatioTest: 0.95
+  kStereoPnPFallbackMaxVoPoints: 300
+  kStereoPnPFallbackOrbFeatures: 4000
+  kStereoPnPFallbackSkipLocalMap: True

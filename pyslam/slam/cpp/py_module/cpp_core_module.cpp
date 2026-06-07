@@ -47,7 +47,9 @@
 #include "py_module/mutex_wrapper_module.h"
 #include "py_module/optimizer_common_module.h"
 #include "py_module/optimizer_g2o_module.h"
+#ifdef PYSLAM_BUILD_GTSAM_OPTIMIZER
 #include "py_module/optimizer_gtsam_module.h"
+#endif
 #include "py_module/rotation_histogram_module.h"
 #include "py_module/sim3_pose_module.h"
 #include "py_module/tracking_core_module.h"
@@ -160,7 +162,9 @@ PYBIND11_MODULE(cpp_core, m) {
     // ------------------------------------------------------------
     // OptimizerGTSAM class
 
+#ifdef PYSLAM_BUILD_GTSAM_OPTIMIZER
     bind_optimizer_gtsam(m);
+#endif
 
     // ------------------------------------------------------------
     // TrackingCore class

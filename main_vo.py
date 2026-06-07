@@ -24,6 +24,7 @@ import os
 import math
 import time
 import platform
+import argparse
 
 from pyslam.config import Config
 
@@ -89,7 +90,20 @@ def factory_plot2d(*args, **kwargs):
 
 if __name__ == "__main__":
 
-    config = Config()
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-c",
+        "--config_path",
+        type=str,
+        default=None,
+        help="Optional path for custom configuration file",
+    )
+    args = parser.parse_args()
+
+    if args.config_path:
+        config = Config(args.config_path)
+    else:
+        config = Config()
 
     dataset = dataset_factory(config)
 
@@ -249,6 +263,9 @@ if __name__ == "__main__":
                 cv2.imshow("Camera", vo.draw_img)
 
         else:
+            if not dataset.is_ok:
+                Printer.yellow("Dataset exhausted; exiting main loop.")
+                break
             time.sleep(0.1)
 
         # get keys

@@ -1,0 +1,31 @@
+DATASET:
+  type: FOLDER_DATASET
+
+
+FOLDER_DATASET:
+  type: folder
+  sensor_type: mono
+  base_path: /home/gh/pointcloud_ws/data_new/Workpiece_Scan_20260515_kitti/image_0
+  name: '*.png'
+  settings: settings/WORKPIECE_1280x720_mono.yaml
+  fps: 1
+  timestamps: ../times.txt
+  environment_type: indoor
+  start_frame_id: 0
+
+
+SYSTEM_STATE:
+  load_state: False
+  folder_path: results/slam_state
+
+
+SAVE_TRAJECTORY:
+  save_trajectory: True
+  format_type: kitti
+  output_folder: results/workpiece_mono_metrics
+  basename: trajectory_workpiece_mono
+
+
+GLOBAL_PARAMETERS:
+  kDoSparseSemanticMappingAndSegmentation: False
+  kUseLoopClosing: False

@@ -1,0 +1,53 @@
+#--------------------------------------------------------------------------------------------
+# Viewer Parameters
+#--------------------------------------------------------------------------------------------
+Viewer.on: 1
+
+Viewer.KeyFrameSize: 0.08
+Viewer.KeyFrameLineWidth: 2
+Viewer.GraphLineWidth: 1
+Viewer.PointSize: 2
+Viewer.CameraSize: 0.1
+Viewer.CameraLineWidth: 2
+Viewer.ViewpointX: 0
+Viewer.ViewpointY: -1
+Viewer.ViewpointZ: -0.1
+Viewer.ViewpointF: 2000
+
+#--------------------------------------------------------------------------------------------
+# Camera Parameters.
+# Source calibration is portrait 720x1280. The dataset images are stored as
+# landscape 1280x720, so these intrinsics are rotated clockwise into image coords.
+#--------------------------------------------------------------------------------------------
+
+Camera.fx: 520.0882
+Camera.fy: 520.0882
+Camera.cx: 330.0484
+Camera.cy: 558.8495
+
+Camera.k1: 0.0
+Camera.k2: 0.0
+Camera.p1: 0.0
+Camera.p2: 0.0
+Camera.k3: 0.0
+
+Camera.width: 1280
+Camera.height: 720
+
+# Provided camera rate.
+Camera.fps: 10.0
+
+# baseline_m * fx = 0.00419 * 520.0882
+Camera.bf: 2.179169558
+
+# OpenCV imread returns BGR images.
+Camera.RGB: 0
+
+ThDepth: 40.0
+
+#--------------------------------------------------------------------------------------------
+# Features extraction
+#--------------------------------------------------------------------------------------------
+
+FeatureTrackerConfig.nFeatures: 2000
+FeatureTrackerConfig.name: ORB

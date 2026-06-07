@@ -1,0 +1,28 @@
+<hr/>
+<h1>九、更新结论：按纵向基线处理后的结果</h1>
+<callout emoji="✅" background-color="light-green" border-color="green">
+  <p><b>最新结论：</b>按用户提供的 4.19mm 纵向双目基线处理后，当前 workpiece 数据集已经可以在 pySLAM 中完整跑通 64 帧；最新统计为 <span text-color="green">num_processed_frames=64</span>、<span text-color="green">num_lost_frames=0</span>、<span text-color="green">percent_lost=0.00</span>。本文档前面关于“只能 smoke test、轨迹不稳定”的结论属于早期诊断阶段，当前以后续本节结果为准。</p>
+</callout>
+<table>
+  <colgroup><col width="180"/><col width="520"/></colgroup>
+  <thead>
+    <tr><th background-color="light-gray">项目</th><th background-color="light-gray">更新结果</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>双目几何判断</td><td>数据更符合纵向基线双目，而不是 pySLAM/KITTI 默认假设的水平校正双目。</td></tr>
+    <tr><td>处理策略</td><td>将左右图按“vertical rig rotated to horizontal”的思路旋转到水平视差方向，并对右图做逐帧 y 方向近似对齐。</td></tr>
+    <tr><td>运行路径</td><td>使用 data/workpiece_kitti_vertical_baseline/ 作为当前适配后的包装数据集。</td></tr>
+    <tr><td>配置文件</td><td>config_workpiece.yaml 与 settings/WORKPIECE_720x1280_stereo.yaml。</td></tr>
+    <tr><td>pySLAM 运行方式</td><td>使用 Python core，关闭与本次验证无关的 C++ 路径；启用 workpiece 专用 stereo bootstrap 与 stereo PnP fallback。</td></tr>
+    <tr><td>帧统计</td><td>results/workpiece_metrics/other_metrics_info.txt：64 总帧，64 已处理，0 lost。</td></tr>
+    <tr><td>轨迹输出</td><td>在线轨迹 trajectory_workpiece_online.txt 为 63 行；最终轨迹 trajectory_workpiece_final.txt 为 20 行。</td></tr>
+  </tbody>
+</table>
+<h2>关键修正点</h2>
+<ul>
+  <li>原始水平双目匹配假设不适合该数据；需要先把纵向基线转换成 pySLAM 可接受的水平视差形式。</li>
+  <li>仅旋转还不够，旋转后仍有 y 残差；逐帧 y-align 是让 stereo depth 点明显增加的关键步骤。</li>
+  <li>baseline 只有 0.00419m，深度对视差误差非常敏感，所以当前结果应理解为工程适配跑通，而不是严格精标定下的高精度 SLAM 评估。</li>
+  <li>若后续追求可量化精度，仍建议补完整双目标定参数：左右相机各自 K/D、R/T，或 OpenCV stereoRectify 生成的 P1/P2/Q/remap map。</li>
+</ul>
+<pre lang="bash" caption="最新验证命令"><code>cd /home/gh/work/pyslam<br/>. ./pyenv-activate.sh<br/>HOME=/tmp/pyslam_home MPLCONFIGDIR=/tmp/pyslam_mpl PYSLAM_USE_CPP=false ./main_slam.py --config_path config_workpiece.yaml --headless --no_output_date</code></pre>

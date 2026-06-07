@@ -112,6 +112,16 @@ class Parameters:
     kInitializerNumMinTriangulatedPointsStereo = 100
     kInitializerFeatureMatchRatioTest = 0.9  # Ratio test used by Initializer   # TODO: put it in an table and make it configurable per descriptor
     kInitializerNumMinNumPointsForPnPWithDepth = 15
+    kBootstrapStereoFromFirstFrame = False
+    kBootstrapStereoMinDepthPoints = 30
+    kUseStereoPnPFallback = False
+    kStereoPnPFallbackMinDepthPoints = 12
+    kStereoPnPFallbackMinInliers = 10
+    kStereoPnPFallbackReprojErr = 8.0
+    kStereoPnPFallbackRatioTest = 0.9
+    kStereoPnPFallbackMaxVoPoints = 300
+    kStereoPnPFallbackOrbFeatures = 4000
+    kStereoPnPFallbackSkipLocalMap = True
     kInitializerUseCellCoverageCheck = True
     kInitializerUseMinFrameDistanceCheck = True
 

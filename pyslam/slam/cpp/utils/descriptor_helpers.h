@@ -238,34 +238,35 @@ inline float float_descriptor_distance(const cv::Mat &a, const cv::Mat &b) noexc
     return std::sqrt(acc);
 }
 
-#if defined(__AVX512F__)
+#if defined(__AVX512F__) || defined(__AVX2__)
 #include <immintrin.h>
-static inline float hsum512_ps(__m512 v) noexcept {
-    // _mm512_reduce_add_ps is available with AVX-512VL/AVX-512DQ on many toolchains,
-    // but to be safe use a manual reduction:
-    __m256 low = _mm512_castps512_ps256(v);
-    __m256 high = _mm256_castpd_ps(_mm512_extractf64x4_pd(_mm512_castps_pd(v), 1));
-    __m256 sum256 = _mm256_add_ps(low, high);
-    __m128 low128 = _mm256_castps256_ps128(sum256);
-    __m128 high128 = _mm256_extractf128_ps(sum256, 1);
-    __m128 sum128 = _mm_add_ps(low128, high128);
-    __m128 s = _mm_hadd_ps(sum128, sum128);
-    s = _mm_hadd_ps(s, s);
-    return _mm_cvtss_f32(s);
-}
-#elif defined(__AVX2__)
-#include <immintrin.h>
+#endif
+
+#if defined(__AVX2__)
 static inline float hsum256_ps(__m256 v) noexcept {
-    __m128 low = _mm256_castps256_ps128(v);
-    __m128 high = _mm256_extractf128_ps(v, 1);
-    __m128 sum = _mm_add_ps(low, high);
-    __m128 shuf = _mm_movehdup_ps(sum);  // (sum3,sum3,sum1,sum1)
-    __m128 sums = _mm_add_ps(sum, shuf); // (s3+s2, s3+s2, s1+s0, s1+s0)
-    shuf = _mm_movehl_ps(shuf, sums);    // (   ,    , s3+s2,   )
-    sums = _mm_add_ss(sums, shuf);       // s3+s2+s1+s0
-    return _mm_cvtss_f32(sums);
+    alignas(32) float lanes[8];
+    _mm256_store_ps(lanes, v);
+    float sum = 0.f;
+    for (float lane : lanes) {
+        sum += lane;
+    }
+    return sum;
 }
-#elif defined(__ARM_NEON)
+#endif
+
+#if defined(__AVX512F__)
+static inline float hsum512_ps(__m512 v) noexcept {
+    alignas(64) float lanes[16];
+    _mm512_store_ps(lanes, v);
+    float sum = 0.f;
+    for (float lane : lanes) {
+        sum += lane;
+    }
+    return sum;
+}
+#endif
+
+#if defined(__ARM_NEON)
 #include <arm_neon.h>
 #endif
 

@@ -57,8 +57,6 @@ from pyslam.viz.cvimage_thread import CvImageViewer
 
 from pyslam.local_features.feature_tracker_configs import FeatureTrackerConfigs
 
-from pyslam.loop_closing.loop_detector_configs import LoopDetectorConfigs
-
 from pyslam.depth_estimation.depth_estimator_factory import (
     depth_estimator_factory,
     DepthEstimatorType,
@@ -164,7 +162,11 @@ if __name__ == "__main__":
     # Select your loop closing configuration (see the file loop_detector_configs.py). Set it to None to disable loop closing.
     # LoopDetectorConfigs: DBOW2, DBOW2_INDEPENDENT, DBOW3, DBOW3_INDEPENDENT, IBOW, OBINDEX2, VLAD, HDC_DELF, SAD, ALEXNET, NETVLAD, COSPLACE, EIGENPLACES, MEGALOC  etc.
     # NOTE: under mac, the boost/text deserialization used by DBOW2 and DBOW3 may be very slow.
-    loop_detection_config = LoopDetectorConfigs.DBOW3
+    loop_detection_config = None
+    if Parameters.kUseLoopClosing:
+        from pyslam.loop_closing.loop_detector_configs import LoopDetectorConfigs
+
+        loop_detection_config = LoopDetectorConfigs.DBOW3
 
     # Select your semantic mapping configuration (see the file semantic_mapping_configs.py). Set it to None to disable semantic mapping.
     semantic_mapping_config = (
@@ -193,6 +195,8 @@ if __name__ == "__main__":
             config.num_features_to_extract
         )  # Override the number of features from the `settings` file
     if (
+        Parameters.kUseLoopClosing
+        and
         config.loop_detection_config_name is not None
     ):  # Check if we set `LoopDetectorConfig.name` in the `settings` file
         loop_detection_config = LoopDetectorConfigs.get_config_from_name(

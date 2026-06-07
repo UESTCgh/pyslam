@@ -121,6 +121,8 @@ class TrackingCore:
                 f"find_homography_with_ransac: idxs_cur is empty or len(idxs_cur) != len(idxs_ref)"
             )
             return False, np.array([], dtype=int), np.array([], dtype=int), 0, 0
+        if len(idxs_cur) < 4:
+            return False, np.array([], dtype=int), np.array([], dtype=int), 0, 0
 
         ransac_method = None
         try:

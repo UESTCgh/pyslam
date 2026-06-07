@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 * This file is part of PYSLAM
 *

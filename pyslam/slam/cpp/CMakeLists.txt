@@ -69,6 +69,18 @@ set(PYSLAM_SRC ${PYSLAM_ROOT}/pyslam)
 set(PYSLAM_SLAM_SRC ${PYSLAM_SRC}/slam/cpp)
 set(PYSLAM_SEMANTICS_SRC ${PYSLAM_SRC}/semantics/cpp)
 
+set(_pyslam_local_gtsam_config "${PYSLAM_ROOT}/thirdparty/gtsam_local/install/lib/cmake/GTSAM/GTSAMConfig.cmake")
+set(_pyslam_default_build_gtsam_optimizer OFF)
+if(EXISTS "${_pyslam_local_gtsam_config}")
+    set(_pyslam_default_build_gtsam_optimizer ON)
+endif()
+set(BUILD_GTSAM_OPTIMIZER ${_pyslam_default_build_gtsam_optimizer} CACHE BOOL "Build C++ GTSAM optimizer support")
+
+if(BUILD_GTSAM_OPTIMIZER AND NOT EXISTS "${_pyslam_local_gtsam_config}")
+    message(WARNING "BUILD_GTSAM_OPTIMIZER=ON but repo-local GTSAM was not found at ${_pyslam_local_gtsam_config}; disabling C++ GTSAM optimizer to avoid incompatible system GTSAM.")
+    set(BUILD_GTSAM_OPTIMIZER OFF CACHE BOOL "Build C++ GTSAM optimizer support" FORCE)
+endif()
+
 
 #=======================================
 # Find required packages
@@ -334,20 +346,24 @@ message(STATUS "G2O_INCLUDE_DIRS: ${G2O_INCLUDE_DIRS}")
 message(STATUS "G2O_LIBRARIES: ${G2O_LIBRARIES}")
 
 
-# gtsam 
-set(GTSAM_ROOT "${PYSLAM_ROOT}/thirdparty/gtsam_local")
-set(CMAKE_PREFIX_PATH ${GTSAM_ROOT}/install/lib/cmake/GTSAM/)
-set(GTSAM_DIR ${GTSAM_ROOT}/install/)
-set(GTSAM_LIB_DIR ${GTSAM_ROOT}/install/lib)
-message(STATUS "set custom gtsam folder: ${GTSAM_DIR}")
-find_package(GTSAM REQUIRED)
-message(STATUS "gtsam include: ${GTSAM_INCLUDE_DIR}")
+if(BUILD_GTSAM_OPTIMIZER)
+    # gtsam
+    set(GTSAM_ROOT "${PYSLAM_ROOT}/thirdparty/gtsam_local")
+    set(CMAKE_PREFIX_PATH ${GTSAM_ROOT}/install/lib/cmake/GTSAM/)
+    set(GTSAM_DIR ${GTSAM_ROOT}/install/)
+    set(GTSAM_LIB_DIR ${GTSAM_ROOT}/install/lib)
+    message(STATUS "set custom gtsam folder: ${GTSAM_DIR}")
+    find_package(GTSAM REQUIRED CONFIG NO_DEFAULT_PATH)
+    message(STATUS "gtsam include: ${GTSAM_INCLUDE_DIR}")
 
-#gtsam factors
-set(GTSAM_FACTORS_ROOT "${PYSLAM_ROOT}/thirdparty/gtsam_factors")
-set(GTSAM_FACTORS_INCLUDE_DIRS "${GTSAM_FACTORS_ROOT}/include")
-message(STATUS "set custom gtsam factors folder: ${GTSAM_FACTORS_ROOT}")
-message(STATUS "gtsam factors include: ${GTSAM_FACTORS_INCLUDE_DIRS}")
+    #gtsam factors
+    set(GTSAM_FACTORS_ROOT "${PYSLAM_ROOT}/thirdparty/gtsam_factors")
+    set(GTSAM_FACTORS_INCLUDE_DIRS "${GTSAM_FACTORS_ROOT}/include")
+    message(STATUS "set custom gtsam factors folder: ${GTSAM_FACTORS_ROOT}")
+    message(STATUS "gtsam factors include: ${GTSAM_FACTORS_INCLUDE_DIRS}")
+else()
+    message(STATUS "C++ GTSAM optimizer disabled")
+endif()
 
 
 # Include directories
@@ -355,8 +371,10 @@ include_directories(${OpenCV_INCLUDE_DIRS})
 include_directories(${EIGEN3_INCLUDE_DIR})
 include_directories(${G2O_INCLUDE_DIRS})
 include_directories(${TBB_INCLUDE_DIRS})
-include_directories(${GTSAM_INCLUDE_DIR})
-include_directories(${GTSAM_FACTORS_INCLUDE_DIRS})
+if(BUILD_GTSAM_OPTIMIZER)
+    include_directories(${GTSAM_INCLUDE_DIR})
+    include_directories(${GTSAM_FACTORS_INCLUDE_DIRS})
+endif()
 include_directories(${Boost_INCLUDE_DIRS})
 
 set(CPP_CORE_LINK_LIBRARIES
@@ -364,14 +382,14 @@ set(CPP_CORE_LINK_LIBRARIES
     ${EIGEN3_LIBRARIES}
     ${G2O_LIBRARIES}
     ${TBB_LINK_LIBS}
-    gtsam  
     ${Boost_LIBRARIES}
     nlohmann_json::nlohmann_json
 )
 
-link_directories( 
-  ${GTSAM_LIB_DIR}
-)
+if(BUILD_GTSAM_OPTIMIZER)
+    list(APPEND CPP_CORE_LINK_LIBRARIES gtsam)
+    link_directories(${GTSAM_LIB_DIR})
+endif()
 
 #=======================================
 # Add C++ core sources and headers
@@ -396,12 +414,15 @@ set(SLAM_CPP_CORE_SOURCES
     ${PYSLAM_SLAM_SRC}/utils/features.cpp    
     ${PYSLAM_SLAM_SRC}/utils/geom_2views.cpp
     ${PYSLAM_SLAM_SRC}/optimizer_g2o.cpp
-    ${PYSLAM_SLAM_SRC}/optimizer_gtsam.cpp
     ${PYSLAM_SLAM_SRC}/tracking_core.cpp
     ${PYSLAM_SLAM_SRC}/config_parameters.cpp
     ${PYSLAM_SLAM_SRC}/geometry_matchers.cpp
     ${PYSLAM_SLAM_SRC}/local_mapping_core.cpp
 )
+
+if(BUILD_GTSAM_OPTIMIZER)
+    list(APPEND SLAM_CPP_CORE_SOURCES ${PYSLAM_SLAM_SRC}/optimizer_gtsam.cpp)
+endif()
 
 if (USE_PYTHON)
     set(SLAM_CPP_CORE_SOURCES
@@ -425,7 +446,6 @@ set(SLAM_CPP_CORE_HEADERS
     ${PYSLAM_SLAM_SRC}/feature_shared_resources.h
     ${PYSLAM_SLAM_SRC}/dictionary.h
     ${PYSLAM_SLAM_SRC}/optimizer_g2o.h
-    ${PYSLAM_SLAM_SRC}/optimizer_gtsam.h
     ${PYSLAM_SLAM_SRC}/optimizer_common.h
     ${PYSLAM_SLAM_SRC}/utils/descriptor_helpers.h
     ${PYSLAM_SLAM_SRC}/utils/eigen_helpers.h
@@ -443,6 +463,10 @@ set(SLAM_CPP_CORE_HEADERS
     ${PYSLAM_SLAM_SRC}/geometry_matchers.h
     ${PYSLAM_SLAM_SRC}/local_mapping_core.h
 )
+
+if(BUILD_GTSAM_OPTIMIZER)
+    list(APPEND SLAM_CPP_CORE_HEADERS ${PYSLAM_SLAM_SRC}/optimizer_gtsam.h)
+endif()
 
 if (USE_PYTHON)
     set(SLAM_CPP_CORE_HEADERS
@@ -503,6 +527,10 @@ set(SLAM_CPP_PYBIND_MODULE_HEADERS
     ${PYSLAM_SEMANTICS_SRC}/py_module/semantic_mapping_shared_resources_module.h
 )
 
+if(BUILD_GTSAM_OPTIMIZER)
+    list(APPEND SLAM_CPP_PYBIND_MODULE_HEADERS ${PYSLAM_SLAM_SRC}/py_module/optimizer_gtsam_module.h)
+endif()
+
 # all source and header files
 
 set(CPP_CORE_SOURCES
@@ -557,6 +585,9 @@ target_compile_definitions(cpp_core_lib PRIVATE
     VERSION_INFO=${PYSLAM_CPP_CORE_VERSION_INFO}
     PYBIND11_DETAILED_ERROR_MESSAGES
 )
+if(BUILD_GTSAM_OPTIMIZER)
+    target_compile_definitions(cpp_core_lib PRIVATE PYSLAM_BUILD_GTSAM_OPTIMIZER=1)
+endif()
 
 # Set output directory for static lib
 set_target_properties(cpp_core_lib PROPERTIES 
@@ -605,10 +636,16 @@ if (USE_PYTHON)
         VERSION_INFO=${PYSLAM_CPP_CORE_VERSION_INFO}
         PYBIND11_DETAILED_ERROR_MESSAGES
     )
+    if(BUILD_GTSAM_OPTIMIZER)
+        target_compile_definitions(cpp_core PRIVATE PYSLAM_BUILD_GTSAM_OPTIMIZER=1)
+    endif()
 
     # Prefer OpenCV + GTSAM (+ matched TBB) in the loader path before any RPATH
     # entries inherited from Python/conda (avoids loading a second OpenCV/TBB).
-    set(_pyslam_cpp_core_rpath "${OpenCV_LIB_DIR};${PYSLAM_ROOT}/thirdparty/gtsam_local/install/lib")
+    set(_pyslam_cpp_core_rpath "${OpenCV_LIB_DIR}")
+    if(BUILD_GTSAM_OPTIMIZER)
+        set(_pyslam_cpp_core_rpath "${_pyslam_cpp_core_rpath};${PYSLAM_ROOT}/thirdparty/gtsam_local/install/lib")
+    endif()
     if(PYSLAM_TBB_LIB_DIR)
         set(_pyslam_cpp_core_rpath "${_pyslam_cpp_core_rpath};${PYSLAM_TBB_LIB_DIR}")
     elseif(TARGET TBB::tbb)
@@ -651,6 +688,7 @@ message(STATUS "Building PYSLAM C++ Core Module")
 message(STATUS "\t CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
 message(STATUS "\t WITH_MARCH_NATIVE: ${WITH_MARCH_NATIVE}")
 message(STATUS "\t USE_PYTHON: ${USE_PYTHON}")
+message(STATUS "\t BUILD_GTSAM_OPTIMIZER: ${BUILD_GTSAM_OPTIMIZER}")
 message(STATUS "\t CMAKE_C_FLAGS: ${CMAKE_C_FLAGS}")
 message(STATUS "\t CMAKE_CXX_FLAGS: ${CMAKE_CXX_FLAGS}")
 message(STATUS "\t OpenCV version: ${OpenCV_VERSION}")

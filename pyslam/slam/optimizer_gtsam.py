@@ -27,9 +27,36 @@ import threading
 import multiprocessing as mp
 import traceback
 
-import gtsam
-import gtsam_factors
-from gtsam.symbol_shorthand import X, L
+class _MissingGtsamDependency:
+    def __init__(self, error):
+        self._error = error
+
+    def __getattr__(self, name):
+        raise ImportError(
+            "GTSAM optimization requires the optional 'gtsam' and "
+            "'gtsam_factors' Python modules."
+        ) from self._error
+
+
+try:
+    import gtsam
+    import gtsam_factors
+    from gtsam.symbol_shorthand import X, L
+except Exception as exc:
+    gtsam = _MissingGtsamDependency(exc)
+    gtsam_factors = _MissingGtsamDependency(exc)
+
+    def X(*args, **kwargs):
+        raise ImportError(
+            "GTSAM optimization requires the optional 'gtsam' and "
+            "'gtsam_factors' Python modules."
+        ) from exc
+
+    def L(*args, **kwargs):
+        raise ImportError(
+            "GTSAM optimization requires the optional 'gtsam' and "
+            "'gtsam_factors' Python modules."
+        ) from exc
 
 import g2o
 
