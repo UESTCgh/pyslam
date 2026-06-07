@@ -313,6 +313,7 @@ if __name__ == "__main__":
         feature_tracker_config["num_features"] = (
             config.num_features_to_extract
         )  # Override the number of features from the `settings` file
+    feature_tracker_config["match_ratio_test"] = Parameters.kFeatureMatchDefaultRatioTest
     if (
         Parameters.kUseLoopClosing
         and

@@ -55,11 +55,7 @@ kRansacProb = 0.999
 kMinIdDistBetweenIntializingFrames = 2
 kMaxIdDistBetweenIntializingFrames = 5  # N.B.: worse performances with values smaller than 5!
 
-kShowFeatureKps = False  # show the feature kps during initialization
-kShowFeatureMatches = False  # show the feature matches during initialization
 kShowGridCellCoverage = False
-
-kInitializerFeatureMatchRatioTest = Parameters.kInitializerFeatureMatchRatioTest
 
 kNumOfFailuresAfterWichNumMinTriangulatedPointsIsReduced = 10
 
@@ -99,7 +95,7 @@ class Initializer(object):
         self.check_min_frame_distance = Parameters.kInitializerUseMinFrameDistanceCheck
         self.check_cell_coverage = Parameters.kInitializerUseCellCoverageCheck
 
-        if kShowFeatureMatches:
+        if Parameters.kShowInitializerFeatureMatches:
             Frame.is_store_imgs = True
 
     def reset(self):
@@ -246,7 +242,9 @@ class Initializer(object):
             return out, is_ok
 
         # find keypoint matches
-        matching_result = match_frames(f_cur, f_ref, kInitializerFeatureMatchRatioTest)
+        matching_result = match_frames(
+            f_cur, f_ref, Parameters.kInitializerFeatureMatchRatioTest
+        )
         idxs_cur = (
             np.asarray(matching_result.idxs1, dtype=int)
             if matching_result.idxs1 is not None
@@ -270,8 +268,8 @@ class Initializer(object):
                 idxs_cur = idxs_cur[valid_match_idxs]
                 idxs_ref = idxs_ref[valid_match_idxs]
 
-        if kShowFeatureMatches:  # debug frame matching
-            if kShowFeatureKps:
+        if Parameters.kShowInitializerFeatureMatches:  # debug frame matching
+            if Parameters.kShowInitializerFeatureKps:
                 frame_img_kps1 = draw_points(img_cur, f_cur.kps)
                 frame_img_kps2 = draw_points(self.f_ref.img, self.f_ref.kps)
                 cv2.imshow("initializer frame kps1", frame_img_kps1)
@@ -282,9 +280,9 @@ class Initializer(object):
                 self.f_ref.img,
                 f_cur.kps[idxs_cur],
                 self.f_ref.kps[idxs_ref],
-                horizontal=False,
+                horizontal=True,
             )
-            # cv2.namedWindow('stereo_img_matches', cv2.WINDOW_NORMAL)
+            cv2.namedWindow("initializer frame matches", cv2.WINDOW_NORMAL)
             cv2.imshow("initializer frame matches", frame_img_matches)
             cv2.waitKey(1)
 

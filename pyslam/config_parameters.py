@@ -168,9 +168,21 @@ class Parameters:
 
     # Stereo matching
     kStereoMatchingMaxRowDistance = 1.1  # [pixels]
+    kStereoMatchingRatioTest = 0.9
+    kStereoMatchingMaxDescriptorDistanceFactor = 0.75
     kStereoMatchingShowMatchedPoints = (
         False  # Show the frame stereo matches (debug stereo matching)
     )
+    kStereoMatchingShowCandidateMatches = False
+    kStereoMatchingDebugDrawMaxMatches = 600
+    kShowFeatureMatches = False
+    kShowRawFrameMatches = False
+    kRawFrameMatchesDebugDrawMaxMatches = 800
+    kShowFeatureMatchesPrevFrame = True
+    kShowFeatureMatchesRefFrame = True
+    kShowFeatureMatchesLocalMap = True
+    kShowInitializerFeatureMatches = False
+    kShowInitializerFeatureKps = False
 
     # Search matches by projection
     kMaxReprojectionDistanceFrame = 7  # [pixels]    o:7

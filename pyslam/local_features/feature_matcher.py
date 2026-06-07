@@ -773,7 +773,8 @@ class FeatureMatcher:
                 assert max_disparity is not None
                 # we perform row matching for stereo images (matching rectified left and right images)
                 max_descriptor_distance = (
-                    0.75 * FeatureInfo.max_descriptor_distance[self.descriptor_type]
+                    Parameters.kStereoMatchingMaxDescriptorDistanceFactor
+                    * FeatureInfo.max_descriptor_distance[self.descriptor_type]
                 )  # for rectified stereo matching we assume the matching descriptors have in general a small relative distance
                 if ratio_test < 1.0:
                     idxs1, idxs2 = MatcherUtils.rowMatchesWithRatioTest(

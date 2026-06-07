@@ -1125,7 +1125,7 @@ class Frame(FrameBase):
         max_disparity = self.camera.bf / min_z
         # we enforce matching on the same row here by using the flag row_matching (epipolar constraint)
         row_matching = True
-        ratio_test = 0.9
+        ratio_test = Parameters.kStereoMatchingRatioTest
         stereo_matching_result = FeatureTrackerShared.feature_matcher.match(
             img,
             img_right,
@@ -1142,6 +1142,22 @@ class Frame(FrameBase):
             return
         matched_kps_l = np.array(self.kps[stereo_matching_result.idxs1], dtype=float)
         matched_kps_r = np.array(self.kps_r[stereo_matching_result.idxs2], dtype=float)
+
+        if Parameters.kStereoMatchingShowCandidateMatches:
+            num_draw_matches = min(
+                len(stereo_matching_result.idxs1),
+                Parameters.kStereoMatchingDebugDrawMaxMatches,
+            )
+            candidate_img_matches = draw_feature_matches(
+                img,
+                img_right,
+                self.kps[stereo_matching_result.idxs1[:num_draw_matches]],
+                self.kps_r[stereo_matching_result.idxs2[:num_draw_matches]],
+                horizontal=True,
+            )
+            cv2.namedWindow("stereo candidate matches", cv2.WINDOW_NORMAL)
+            cv2.imshow("stereo candidate matches", candidate_img_matches)
+            cv2.waitKey(1)
 
         # check disparity range
         disparities = np.array(
@@ -1359,9 +1375,9 @@ class Frame(FrameBase):
                 img_right,
                 self.kps[good_matched_idxs1],
                 self.kps_r[good_matched_idxs2],
-                horizontal=False,
+                horizontal=True,
             )
-            # cv2.namedWindow('stereo_img_matches', cv2.WINDOW_NORMAL)
+            cv2.namedWindow("stereo_img_matches", cv2.WINDOW_NORMAL)
             cv2.imshow("stereo_img_matches", stereo_img_matches)
             cv2.waitKey(1)
 

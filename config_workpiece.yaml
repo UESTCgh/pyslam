@@ -30,6 +30,16 @@ GLOBAL_PARAMETERS:
   kDoSparseSemanticMappingAndSegmentation: False
   kUseLoopClosing: False
   kStereoMatchingMaxRowDistance: 5.0
+  kStereoMatchingShowMatchedPoints: True
+  kStereoMatchingShowCandidateMatches: False
+  kShowFeatureMatches: True
+  kShowRawFrameMatches: True
+  kRawFrameMatchesDebugDrawMaxMatches: 800
+  kShowFeatureMatchesPrevFrame: True
+  kShowFeatureMatchesRefFrame: True
+  kShowFeatureMatchesLocalMap: True
+  kShowInitializerFeatureMatches: True
+  kShowInitializerFeatureKps: False
   kInitializerNumMinFeaturesStereo: 300
   kInitializerNumMinTriangulatedPointsStereo: 20
   kInitializerNumMinNumPointsForPnPWithDepth: 8

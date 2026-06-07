@@ -86,13 +86,6 @@ if TYPE_CHECKING:
 kVerbose = True
 kTimerVerbose = False
 
-kShowFeatureMatches = (
-    False  # this flag dominates over the following related ones kShowFeatureMatchesXXX
-)
-kShowFeatureMatchesPrevFrame = True
-kShowFeatureMatchesRefFrame = True
-kShowFeatureMatchesLocalMap = True
-
 kLogKFinfoToFile = True
 
 kUseDynamicDesDistanceTh = Parameters.kUseDynamicDesDistanceTh
@@ -148,7 +141,7 @@ class TrackingHistory(object):
 class Tracking:
     def __init__(self, slam: "Slam"):
 
-        if kShowFeatureMatches or Parameters.kUseStereoPnPFallback:
+        if Parameters.kShowFeatureMatches or Parameters.kUseStereoPnPFallback:
             Frame.is_store_imgs = True
 
         self.slam = slam
@@ -351,6 +344,38 @@ class Tracking:
     # track camera motion of f_cur w.r.t. f_ref
     def track_previous_frame(self, f_ref: Frame, f_cur: Frame):
         print(">>>> tracking previous frame ...")
+        if Parameters.kShowRawFrameMatches:
+            raw_matching_result = match_frames(
+                f_cur, f_ref, ratio_test=Parameters.kFeatureMatchDefaultRatioTest
+            )
+            raw_idxs_cur = (
+                np.asarray(raw_matching_result.idxs1, dtype=int)
+                if raw_matching_result.idxs1 is not None
+                else np.array([], dtype=int)
+            )
+            raw_idxs_ref = (
+                np.asarray(raw_matching_result.idxs2, dtype=int)
+                if raw_matching_result.idxs2 is not None
+                else np.array([], dtype=int)
+            )
+            if len(raw_idxs_cur) > 0 and len(raw_idxs_ref) > 0:
+                num_draw_matches = min(
+                    len(raw_idxs_cur), Parameters.kRawFrameMatchesDebugDrawMaxMatches
+                )
+                raw_img_matches = draw_feature_matches(
+                    f_ref.img,
+                    f_cur.img,
+                    f_ref.kps[raw_idxs_ref[:num_draw_matches]],
+                    f_cur.kps[raw_idxs_cur[:num_draw_matches]],
+                    f_ref.sizes[raw_idxs_ref[:num_draw_matches]],
+                    f_cur.sizes[raw_idxs_cur[:num_draw_matches]],
+                    horizontal=True,
+                    show_kp_sizes=False,
+                )
+                cv2.namedWindow("raw prev-frame descriptor matches", cv2.WINDOW_NORMAL)
+                cv2.imshow("raw prev-frame descriptor matches", raw_img_matches)
+                cv2.waitKey(1)
+
         is_search_frame_by_projection_failure = False
         use_search_frame_by_projection = (
             self.motion_model.is_ok and kUseSearchFrameByProjection and kUseMotionModel
@@ -412,7 +437,7 @@ class Tracking:
                         f"# matched inter-frame map points with homography and RANSAC (blurry frames): {self.num_matched_kps}, percentage of inliers: {self.num_matched_kps/(num_outliers+self.num_matched_kps)*100:.2f}%"
                     )
 
-            if kShowFeatureMatches and kShowFeatureMatchesPrevFrame:
+            if Parameters.kShowFeatureMatches and Parameters.kShowFeatureMatchesPrevFrame:
                 img_matches = draw_feature_matches(
                     f_ref.img,
                     f_cur.img,
@@ -420,9 +445,10 @@ class Tracking:
                     f_cur.kps[idxs_cur],
                     f_ref.sizes[idxs_ref],
                     f_cur.sizes[idxs_cur],
-                    horizontal=False,
+                    horizontal=True,
                     show_kp_sizes=False,
                 )
+                cv2.namedWindow("tracking prev frame w/ projection - matches", cv2.WINDOW_NORMAL)
                 cv2.imshow("tracking prev frame w/ projection - matches", img_matches)
                 cv2.waitKey(1)
 
@@ -602,7 +628,7 @@ class Tracking:
         )
         print("# matched map points in reference frame: %d " % num_found_map_pts_inter_frame)
 
-        if kShowFeatureMatches and kShowFeatureMatchesRefFrame:
+        if Parameters.kShowFeatureMatches and Parameters.kShowFeatureMatchesRefFrame:
             img_matches = draw_feature_matches(
                 f_ref.img,
                 f_cur.img,
@@ -610,9 +636,10 @@ class Tracking:
                 f_cur.kps[idx_cur_prop],
                 f_ref.sizes[idx_ref_prop],
                 f_cur.sizes[idx_cur_prop],
-                horizontal=False,
+                horizontal=True,
                 show_kp_sizes=False,
             )
+            cv2.namedWindow("tracking ref frame w/o projection - matches", cv2.WINDOW_NORMAL)
             cv2.imshow("tracking ref frame w/o projection - matches", img_matches)
             cv2.waitKey(1)
 
@@ -933,10 +960,11 @@ class Tracking:
         )
         # print("# local map points ", self.map.local_map.num_points())
 
-        if kShowFeatureMatches and kShowFeatureMatchesLocalMap:
+        if Parameters.kShowFeatureMatches and Parameters.kShowFeatureMatchesLocalMap:
             img_matched_trails = f_cur.draw_feature_trails(
                 f_cur.img.copy(), matched_points_frame_idxs, trail_max_length=3
             )
+            cv2.namedWindow("tracking local map - matched trails", cv2.WINDOW_NORMAL)
             cv2.imshow("tracking local map - matched trails", img_matched_trails)
             cv2.waitKey(1)
 
