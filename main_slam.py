@@ -38,22 +38,17 @@ from pyslam.semantics.semantic_eval import evaluate_semantic_mapping
 from pyslam.slam.slam import Slam, SlamState
 from pyslam.slam import PinholeCamera, USE_CPP
 
-from pyslam.viz.slam_plot_drawer import SlamPlotDrawerThread
 from pyslam.io.ground_truth import groundtruth_factory
 from pyslam.io.dataset_factory import dataset_factory
 from pyslam.io.dataset_types import SensorType
 from pyslam.io.trajectory_writer import TrajectoryWriter
 
-from pyslam.viz.viewer3D import Viewer3D
 from pyslam.utilities.logging import Printer, LoggerQueue
 from pyslam.utilities.system import force_kill_all_and_exit
-from pyslam.utilities.img_management import ImgWriter
 from pyslam.utilities.evaluation import eval_ate
 from pyslam.utilities.geom_trajectory import find_poses_associations
-from pyslam.utilities.colors import GlColors
 from pyslam.utilities.serialization import SerializableEnumEncoder
 from pyslam.utilities.timer import TimerFps
-from pyslam.viz.cvimage_thread import CvImageViewer
 
 from pyslam.local_features.feature_tracker_configs import FeatureTrackerConfigs
 
@@ -82,6 +77,8 @@ datetime_string = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 
 def draw_associated_cameras(viewer3D, assoc_est_poses, assoc_gt_poses, T_gt_est):
+    from pyslam.utilities.colors import GlColors
+
     T_est_gt = np.linalg.inv(T_gt_est)
     scale = np.mean([np.linalg.norm(T_est_gt[i, :3]) for i in range(3)])
     R_est_gt = T_est_gt[:3, :3] / scale  # we need a pure rotation to avoid camera scale changes
@@ -92,6 +89,128 @@ def draw_associated_cameras(viewer3D, assoc_est_poses, assoc_gt_poses, T_gt_est)
     viewer3D.draw_cameras(
         [assoc_est_poses, assoc_gt_poses_aligned], [GlColors.kCyan, GlColors.kMagenta]
     )
+
+
+def _as_points_array(points):
+    if points is None or len(points) == 0:
+        return np.empty((0, 3), dtype=np.float32)
+    points = np.asarray(points, dtype=np.float32).reshape(-1, 3)
+    return points[np.isfinite(points).all(axis=1)]
+
+
+def _get_good_map_points_xyz(slam):
+    points = []
+    for map_point in slam.map.get_points():
+        if map_point is None or map_point.is_bad():
+            continue
+        try:
+            point = np.asarray(map_point.pt(), dtype=np.float32).reshape(3)
+        except Exception:
+            continue
+        if np.isfinite(point).all():
+            points.append(point)
+    return _as_points_array(points)
+
+
+def _draw_polyline(image, pixels, color, thickness=2):
+    if len(pixels) < 2:
+        return
+    for p0, p1 in zip(pixels[:-1], pixels[1:]):
+        cv2.line(image, tuple(p0), tuple(p1), color, thickness, cv2.LINE_AA)
+
+
+def save_trajectory_map_points_plot(slam, output_folder, final_poses=None):
+    if output_folder is None:
+        return
+    os.makedirs(output_folder, exist_ok=True)
+
+    online_traj = _as_points_array(slam.tracking.traj3d_est)
+    final_traj = _as_points_array([pose[:3, 3] for pose in final_poses]) if final_poses else None
+    map_points = _get_good_map_points_xyz(slam)
+
+    if len(map_points) > 0:
+        np.savetxt(os.path.join(output_folder, "map_points.xyz"), map_points, fmt="%.9g")
+
+    draw_sets = []
+    if len(map_points) > 0:
+        draw_sets.append(map_points[:, [0, 2]])
+    if len(online_traj) > 0:
+        draw_sets.append(online_traj[:, [0, 2]])
+    if final_traj is not None and len(final_traj) > 0:
+        draw_sets.append(final_traj[:, [0, 2]])
+
+    image_size = 900
+    margin = 70
+    image = np.full((image_size, image_size, 3), 255, dtype=np.uint8)
+
+    if not draw_sets:
+        cv2.putText(
+            image,
+            "No trajectory or map points to draw",
+            (70, image_size // 2),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.8,
+            (40, 40, 40),
+            2,
+            cv2.LINE_AA,
+        )
+    else:
+        all_xy = np.vstack(draw_sets)
+        min_xy = all_xy.min(axis=0)
+        max_xy = all_xy.max(axis=0)
+        span = np.maximum(max_xy - min_xy, 1e-6)
+        scale = (image_size - 2 * margin) / float(np.max(span))
+        center = (min_xy + max_xy) * 0.5
+
+        def project(points3d):
+            xy = points3d[:, [0, 2]]
+            pixels = (xy - center) * scale
+            pixels[:, 0] += image_size * 0.5
+            pixels[:, 1] = image_size * 0.5 - pixels[:, 1]
+            return np.round(pixels).astype(np.int32)
+
+        if len(map_points) > 0:
+            pixels = project(map_points)
+            if len(pixels) > 25000:
+                step = int(np.ceil(len(pixels) / 25000))
+                pixels = pixels[::step]
+            for x, y in pixels:
+                cv2.circle(image, (int(x), int(y)), 1, (110, 110, 110), -1, cv2.LINE_AA)
+
+        if len(online_traj) > 0:
+            pixels = project(online_traj)
+            _draw_polyline(image, pixels, (40, 120, 230), 2)
+            cv2.circle(image, tuple(pixels[0]), 5, (40, 180, 40), -1, cv2.LINE_AA)
+            cv2.circle(image, tuple(pixels[-1]), 5, (40, 40, 220), -1, cv2.LINE_AA)
+
+        if final_traj is not None and len(final_traj) > 0:
+            pixels = project(final_traj)
+            _draw_polyline(image, pixels, (180, 40, 40), 2)
+
+        cv2.putText(
+            image,
+            f"online poses: {len(online_traj)}  final poses: {0 if final_traj is None else len(final_traj)}  map points: {len(map_points)}",
+            (30, 35),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.65,
+            (20, 20, 20),
+            2,
+            cv2.LINE_AA,
+        )
+        cv2.putText(
+            image,
+            "top-down X-Z view",
+            (30, 65),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            (80, 80, 80),
+            1,
+            cv2.LINE_AA,
+        )
+
+    output_path = os.path.join(output_folder, "trajectory_map_points.png")
+    cv2.imwrite(output_path, image)
+    Printer.green(f"Saved trajectory/map-points plot to {output_path}")
 
 
 if __name__ == "__main__":
@@ -271,6 +390,11 @@ if __name__ == "__main__":
         plot_drawer = None
         cv_image_viewer = None
     else:
+        from pyslam.viz.slam_plot_drawer import SlamPlotDrawerThread
+        from pyslam.viz.viewer3D import Viewer3D
+        from pyslam.utilities.img_management import ImgWriter
+        from pyslam.viz.cvimage_thread import CvImageViewer
+
         viewer3D = Viewer3D(scale=dataset.scale_viewer_3d)
         plot_drawer = SlamPlotDrawerThread(slam, viewer3D)
         img_writer = ImgWriter(font_scale=0.5)
@@ -488,26 +612,34 @@ if __name__ == "__main__":
     if online_trajectory_writer:
         online_trajectory_writer.close_file()
 
+    est_poses = []
+
     # compute metrics on the estimated final trajectory
     try:
         est_poses, timestamps, ids = slam.get_final_trajectory()
-        is_final = not dataset.is_ok
-        assoc_timestamps, assoc_est_poses, assoc_gt_poses = find_poses_associations(
-            timestamps, est_poses, gt_timestamps, gt_poses
-        )
-        ape_stats, T_gt_est = eval_ate(
-            poses_est=assoc_est_poses,
-            poses_gt=assoc_gt_poses,
-            frame_ids=ids,
-            curr_frame_id=img_id,
-            is_final=is_final,
-            is_monocular=is_monocular,
-            save_dir=metrics_save_dir,
-        )
-        Printer.green(f"EVO stats: {json.dumps(ape_stats, indent=4)}")
+        save_trajectory_map_points_plot(slam, metrics_save_dir, final_poses=est_poses)
+
+        if len(est_poses) > 0:
+            is_final = not dataset.is_ok
+            assoc_timestamps, assoc_est_poses, assoc_gt_poses = find_poses_associations(
+                timestamps, est_poses, gt_timestamps, gt_poses
+            )
+            ape_stats, T_gt_est = eval_ate(
+                poses_est=assoc_est_poses,
+                poses_gt=assoc_gt_poses,
+                frame_ids=ids,
+                curr_frame_id=img_id,
+                is_final=is_final,
+                is_monocular=is_monocular,
+                save_dir=metrics_save_dir,
+            )
+            Printer.green(f"EVO stats: {json.dumps(ape_stats, indent=4)}")
+        else:
+            Printer.yellow("No final trajectory available; skipping ATE evaluation")
 
         if final_trajectory_writer:
-            final_trajectory_writer.write_full_trajectory(est_poses, timestamps)
+            if len(est_poses) > 0:
+                final_trajectory_writer.write_full_trajectory(est_poses, timestamps)
             final_trajectory_writer.close_file()
 
         other_metrics_file_path = os.path.join(metrics_save_dir, "other_metrics_info.txt")
@@ -522,6 +654,9 @@ if __name__ == "__main__":
     except Exception as e:
         print("Exception while computing metrics: ", e)
         print(f"traceback: {traceback.format_exc()}")
+        save_trajectory_map_points_plot(slam, metrics_save_dir, final_poses=est_poses)
+        if final_trajectory_writer:
+            final_trajectory_writer.close_file()
 
     # close stuff - ensure proper shutdown order
     # First stop SLAM (which stops all processes and shuts down their managers)

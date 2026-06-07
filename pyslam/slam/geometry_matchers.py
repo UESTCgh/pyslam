@@ -146,7 +146,8 @@ def _search_frame_by_projection(
 
     # get all matched points of f_ref which are non-outlier
     matched_ref_idxs = np.array(
-        [i for i, p in enumerate(f_ref.points) if p is not None and not f_ref.outliers[i]]
+        [i for i, p in enumerate(f_ref.points) if p is not None and not f_ref.outliers[i]],
+        dtype=int,
     )
 
     # if we have some already matched points in reference frame, remove them from the list
@@ -281,11 +282,11 @@ def _search_frame_by_projection(
             "matches",
         )
         # print('rotation histogram: ', rot_histo)
-        idxs_ref = np.array(idxs_ref)[valid_match_idxs]
-        idxs_cur = np.array(idxs_cur)[valid_match_idxs]
+        idxs_ref = np.array(idxs_ref, dtype=int)[valid_match_idxs]
+        idxs_cur = np.array(idxs_cur, dtype=int)[valid_match_idxs]
         found_pts_count = len(valid_match_idxs)
 
-    return np.array(idxs_ref), np.array(idxs_cur), found_pts_count
+    return np.array(idxs_ref, dtype=int), np.array(idxs_cur, dtype=int), found_pts_count
     # return idxs_ref, idxs_cur, found_pts_count
 
 
@@ -318,11 +319,12 @@ def _search_keyframe_by_projection(
     ref_mps = kf_ref.get_matched_points()
 
     if len(ref_mps) == 0:
-        return np.array([]), np.array([]), 0
+        return np.array([], dtype=int), np.array([], dtype=int), 0
 
     # Get valid map points (non-bad, non-outliers)
     matched_ref_idxs = np.array(
-        [i for i, p in enumerate(ref_mps) if p is not None and not p.is_bad()]
+        [i for i, p in enumerate(ref_mps) if p is not None and not p.is_bad()],
+        dtype=int,
     )
 
     # Remove already matched points if given
@@ -331,7 +333,7 @@ def _search_keyframe_by_projection(
 
     matched_ref_points = [ref_mps[i] for i in matched_ref_idxs]
     if len(matched_ref_points) == 0:
-        return np.array([]), np.array([]), 0
+        return np.array([], dtype=int), np.array([], dtype=int), 0
 
     # points_w = np.array([p for p in matched_ref_points])
 
@@ -404,11 +406,11 @@ def _search_keyframe_by_projection(
             "matches",
         )
 
-        idxs_ref = np.array(idxs_ref)[valid_match_idxs]
-        idxs_cur = np.array(idxs_cur)[valid_match_idxs]
+        idxs_ref = np.array(idxs_ref, dtype=int)[valid_match_idxs]
+        idxs_cur = np.array(idxs_cur, dtype=int)[valid_match_idxs]
         found_pts_count = len(valid_match_idxs)
 
-    return np.array(idxs_ref), np.array(idxs_cur), found_pts_count
+    return np.array(idxs_ref, dtype=int), np.array(idxs_cur, dtype=int), found_pts_count
 
 
 # search by projection matches between {input map points} and {unmatched keypoints of frame f_cur}, (access frame from tracking thread, no need to lock)
